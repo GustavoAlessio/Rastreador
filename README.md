@@ -1,11 +1,7 @@
-<<<<<<< HEAD
-(seu conteúdo local)
 # Rastreador de Pedidos WhatsApp
+
 Projeto para rastrear status de pedidos via WhatsApp.
 
-
-# Rastreador de Pedidos WhatsApp
-Projeto para rastrear status de pedidos via WhatsApp.
 # Webhook para Rastreamento de Pedidos via WhatsApp
 
 Este projeto implementa um webhook para rastreamento inteligente de pedidos via WhatsApp, integrando as APIs do Twilio e OpenAI para fornecer respostas personalizadas e humanizadas sobre o status de pedidos.
@@ -168,11 +164,3 @@ Para testar o webhook:
 
 Este projeto está licenciado sob a licença MIT - veja o arquivo LICENSE para mais detalhes.
 (conteúdo do GitHub)
->>>>>>> main
-=======
-# Rastreador
->>>>>>> fb334a630cf44d53709be5701d238e18a4fcd4f2
-=======
-# Rastreador
->>>>>>> fb334a630cf44d53709be5701d238e18a4fcd4f2
-
