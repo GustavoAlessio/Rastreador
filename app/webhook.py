@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from twilio.twiml.messaging_response import MessagingResponse
 from app.order_tracking import get_order_status
 from app.openai_integration import generate_humanized_response
+from app.utils import send_whatsapp_buttons
 import os
 import re
 
@@ -58,15 +59,10 @@ def webhook():
         session["cpf_cnpj"] = cpf_cnpj
         session["step"] = "awaiting_department"
 
-        # Oferece opções de departamento
-        resp.message(
-            "Ótimo! ✅ Agora, escolha com qual departamento deseja falar:\n\n"
-            "🛒 *Envios e Rastreamentos*\n"
-            "🎯 *Atendimento Comercial*\n"
-            "🛠️ *Suporte Técnico*\n\n"
-            "Digite exatamente uma das opções acima."
-        )
-        return str(resp)
+        # Aqui envia os botões para o cliente
+        send_whatsapp_buttons(user_number)
+
+        return ('', 204)  # Responde vazio para encerrar o webhook depois de enviar os botões
 
     # Se estamos esperando a escolha do departamento
     if session["step"] == "awaiting_department":
@@ -117,14 +113,11 @@ def webhook():
         else:
             resp.message(
                 "Desculpe, não entendi sua escolha. 😕\n"
-                "Por favor, digite exatamente uma das opções:\n"
-                "🛒 *Envios e Rastreamentos*\n"
-                "🎯 *Atendimento Comercial*\n"
-                "🛠️ *Suporte Técnico*"
+                "Por favor, clique em uma das opções enviadas anteriormente. 🛒🎯🛠️"
             )
             return str(resp)
 
-    # Se por algum motivo cair fora do fluxo
+    # Se cair fora do fluxo
     resp.message("Desculpe, não entendi. Vamos começar novamente. 👋")
     del user_sessions[user_number]
     return str(resp)
