@@ -1,94 +1,138 @@
-import random
-from datetime import datetime, timedelta
+import os
+import requests
+from datetime import datetime  # ✅ Corrige datetime
 
-# Simulação de banco de dados de pedidos
+# ✅ MOCK_ORDERS precisa estar aqui
 MOCK_ORDERS = {
-    # Pedidos por número
     "123456": {"status": "em trânsito", "carrier": "Correios"},
     "789012": {"status": "saiu para entrega", "carrier": "Braspress"},
     "345678": {"status": "entregue", "carrier": "Rodonaves"},
-    "901234": {"status": "parado", "carrier": "Correios"},
-    "567890": {"status": "atraso", "carrier": "Braspress"},
-    "234567": {"status": "devolvido", "carrier": "Rodonaves"},
-    
-    # Pedidos por CPF (simplificado)
-    "12345678900": {"status": "em trânsito", "carrier": "Correios", "order_number": "111222"},
-    "98765432100": {"status": "entregue", "carrier": "Braspress", "order_number": "333444"},
-    "45678912300": {"status": "saiu para entrega", "carrier": "Rodonaves", "order_number": "555666"}
 }
+
+def fetch_braspress_tracking(order_number):
+    """Consulta status via API Braspress."""
+    try:
+        cnpj = os.getenv("BRASPRESS_CNPJ")
+        return_type = "json"
+        url = f"https://api.braspress.com/v3/tracking/byNumPedido/{cnpj}/{order_number}/{return_type}"
+
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        tracking_data = response.json()
+
+        if tracking_data and isinstance(tracking_data, list):
+            last_event = tracking_data[-1]
+            return {
+                "order_number": order_number,
+                "status": last_event.get("situacao", "em trânsito").lower(),
+                "carrier": "Braspress",
+                "estimated_delivery": last_event.get("previsaoEntrega", "N/A"),
+                "last_update": last_event.get("data", datetime.now().strftime("%d/%m/%Y"))
+            }
+        else:
+            raise ValueError("Resposta da API da Braspress vazia ou inválida.")
+    except Exception as e:
+        print(f"Erro Braspress: {str(e)}")
+        return None
+
+def fetch_correios_tracking(order_number):
+    """Consulta status via API Correios."""
+    try:
+        correios_user = os.getenv("CORREIOS_USER")
+        correios_pass = os.getenv("CORREIOS_PASS")
+
+        url = f"https://api.linkdoscorreios/sro?usuario={correios_user}&senha={correios_pass}&codigo={order_number}"
+
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        tracking_data = response.json()
+
+        if tracking_data:
+            last_event = tracking_data.get("eventos", [{}])[-1]
+            return {
+                "order_number": order_number,
+                "status": last_event.get("descricao", "em trânsito").lower(),
+                "carrier": "Correios",
+                "estimated_delivery": last_event.get("previsaoEntrega", "N/A"),
+                "last_update": last_event.get("data", datetime.now().strftime("%d/%m/%Y"))
+            }
+        else:
+            raise ValueError("Resposta da API dos Correios vazia ou inválida.")
+    except Exception as e:
+        print(f"Erro Correios: {str(e)}")
+        return None
+
+def fetch_rodonaves_tracking(order_number):
+    """Consulta status via API Rodonaves."""
+    try:
+        token = os.getenv("RODONAVES_TOKEN")
+        url = "https://tracking-apigateway.rte.com.br/api/v1/tracking"
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "pedido": order_number
+        }
+
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        response.raise_for_status()
+        tracking_data = response.json()
+
+        if tracking_data and tracking_data.get("tracking"):
+            last_event = tracking_data["tracking"][-1]
+            return {
+                "order_number": order_number,
+                "status": last_event.get("situacao", "em trânsito").lower(),
+                "carrier": "Rodonaves",
+                "estimated_delivery": last_event.get("previsaoEntrega", "N/A"),
+                "last_update": last_event.get("dataEvento", datetime.now().strftime("%d/%m/%Y"))
+            }
+        else:
+            raise ValueError("Resposta da API Rodonaves vazia ou inválida.")
+    except Exception as e:
+        print(f"Erro Rodonaves: {str(e)}")
+        return None
 
 def get_order_status(identifier):
     """
-    Simula a consulta de status de um pedido com base no número do pedido ou CPF.
-    
-    No futuro, esta função pode ser adaptada para integrar com APIs reais de 
-    transportadoras como Correios, Braspress e Rodonaves.
-    
-    Args:
-        identifier (str): Número do pedido ou CPF do cliente
-    
-    Returns:
-        dict: Dicionário contendo informações do status do pedido
+    Consulta Correios, Braspress ou Rodonaves, ou usa MOCK se não disponível.
     """
-    # Remove caracteres não numéricos (para lidar com CPFs formatados)
     identifier = ''.join(filter(str.isdigit, identifier))
-    
-    # Verifica se o identificador existe na base simulada
+
     if identifier in MOCK_ORDERS:
-        order_data = MOCK_ORDERS[identifier].copy()
-        
-        # Se o identificador for um CPF, usa o número do pedido associado
-        order_number = order_data.pop("order_number", identifier)
-        
-        # Gera datas simuladas
-        today = datetime.now()
-        
-        # Define a previsão de entrega com base no status
-        if order_data["status"] == "em trânsito":
-            estimated_delivery = (today + timedelta(days=random.randint(2, 5))).strftime("%d/%m/%Y")
-        elif order_data["status"] == "saiu para entrega":
-            estimated_delivery = today.strftime("%d/%m/%Y")
-        elif order_data["status"] == "parado" or order_data["status"] == "atraso":
-            estimated_delivery = (today + timedelta(days=random.randint(5, 10))).strftime("%d/%m/%Y")
-        else:
-            estimated_delivery = "N/A"
-        
-        # Define a data da última atualização
-        if order_data["status"] == "entregue" or order_data["status"] == "devolvido":
-            last_update = (today - timedelta(days=random.randint(1, 3))).strftime("%d/%m/%Y")
-        else:
-            last_update = today.strftime("%d/%m/%Y")
-        
-        # Monta o objeto de resposta
-        return {
-            "order_number": order_number,
-            "status": order_data["status"],
-            "carrier": order_data["carrier"],
-            "estimated_delivery": estimated_delivery,
-            "last_update": last_update
+        carrier = MOCK_ORDERS[identifier]["carrier"].lower()
+
+        CARRIER_FETCH_FUNCTIONS = {
+            "braspress": fetch_braspress_tracking,
+            "correios": fetch_correios_tracking,
+            "rodonaves": fetch_rodonaves_tracking,
         }
-    else:
-        # Se o pedido não for encontrado, gera um pedido aleatório
-        # Isso é apenas para fins de demonstração
-        statuses = ["em trânsito", "saiu para entrega", "entregue", "parado", "atraso"]
-        carriers = ["Correios", "Braspress", "Rodonaves"]
+
+        fetch_function = CARRIER_FETCH_FUNCTIONS.get(carrier)
+
+        if fetch_function:
+            real_status = fetch_function(identifier)
+            if real_status:
+                return real_status
         
-        status = random.choice(statuses)
-        today = datetime.now()
-        
-        if status == "em trânsito":
-            estimated_delivery = (today + timedelta(days=random.randint(2, 5))).strftime("%d/%m/%Y")
-        elif status == "saiu para entrega":
-            estimated_delivery = today.strftime("%d/%m/%Y")
-        elif status == "parado" or status == "atraso":
-            estimated_delivery = (today + timedelta(days=random.randint(5, 10))).strftime("%d/%m/%Y")
-        else:
-            estimated_delivery = "N/A"
-            
+        # fallback se não conseguir
+        order_data = MOCK_ORDERS[identifier]
         return {
             "order_number": identifier,
-            "status": status,
-            "carrier": random.choice(carriers),
-            "estimated_delivery": estimated_delivery,
-            "last_update": today.strftime("%d/%m/%Y")
+            "status": order_data["status"],
+            "carrier": order_data["carrier"],
+            "estimated_delivery": "N/A",
+            "last_update": datetime.now().strftime("%d/%m/%Y")
         }
+
+    # fallback total se o pedido não estiver nos mocks
+    return {
+        "order_number": identifier,
+        "status": "em trânsito",
+        "carrier": "Desconhecida",
+        "estimated_delivery": "N/A",
+        "last_update": datetime.now().strftime("%d/%m/%Y")
+    }
