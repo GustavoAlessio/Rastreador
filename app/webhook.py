@@ -2,7 +2,6 @@ from flask import Blueprint, request, jsonify
 from twilio.twiml.messaging_response import MessagingResponse
 from app.order_tracking import get_order_status
 from app.openai_integration import generate_humanized_response
-from app.utils import send_whatsapp_buttons
 import os
 import re
 
@@ -59,16 +58,21 @@ def webhook():
         session["cpf_cnpj"] = cpf_cnpj
         session["step"] = "awaiting_department"
 
-        # Aqui envia os botões para o cliente
-        send_whatsapp_buttons(user_number)
-
-        return ('', 204)  # Responde vazio para encerrar o webhook depois de enviar os botões
+        # Envia o menu numerado
+        resp.message(
+            "Ótimo! ✅ Agora, escolha com qual departamento deseja falar:\n\n"
+            "1️⃣ *Envios e Rastreamentos*\n"
+            "2️⃣ *Atendimento Comercial*\n"
+            "3️⃣ *Suporte Técnico*\n\n"
+            "Por favor, responda apenas com o número da opção desejada. 🔢"
+        )
+        return str(resp)
 
     # Se estamos esperando a escolha do departamento
     if session["step"] == "awaiting_department":
-        department = incoming_msg.lower()
+        option = incoming_msg.strip()
 
-        if "envios" in department or "rastreamento" in department:
+        if option == "1":
             session["step"] = "tracking"
             resp.message("Perfeito! 📦 Vou localizar o status do seu pedido. Um momento...")
 
@@ -85,7 +89,7 @@ def webhook():
 
             return str(resp)
 
-        elif "atendimento" in department:
+        elif option == "2":
             resp.message(
                 "Ótimo! 🎯 Você está sendo direcionado para o *Atendimento Comercial*.\n\n"
                 "Nosso time está disponível para tirar dúvidas sobre:\n"
@@ -98,7 +102,7 @@ def webhook():
             del user_sessions[user_number]
             return str(resp)
 
-        elif "suporte" in department:
+        elif option == "3":
             resp.message(
                 "Tudo certo! 🛠️ Você está sendo direcionado para o *Suporte Técnico*.\n\n"
                 "Nosso time pode te ajudar com:\n"
@@ -113,7 +117,10 @@ def webhook():
         else:
             resp.message(
                 "Desculpe, não entendi sua escolha. 😕\n"
-                "Por favor, clique em uma das opções enviadas anteriormente. 🛒🎯🛠️"
+                "Por favor, responda apenas com o número:\n"
+                "1️⃣ *Envios e Rastreamentos*\n"
+                "2️⃣ *Atendimento Comercial*\n"
+                "3️⃣ *Suporte Técnico*"
             )
             return str(resp)
 
