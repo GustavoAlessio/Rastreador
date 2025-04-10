@@ -7,41 +7,126 @@ import re
 
 webhook_bp = Blueprint('webhook', __name__)
 
+# Armazena sessões de usuários
+user_sessions = {}
+
+# Palavras que são apenas saudações
 GENERIC_MESSAGES = ["oi", "olá", "hello", "hi", "bom dia", "boa tarde", "boa noite"]
 
 @webhook_bp.route('/webhook', methods=['POST'])
 def webhook():
     resp = MessagingResponse()
-    incoming_msg = request.values.get('Body', '').strip().lower()
+    incoming_msg = request.values.get('Body', '').strip()
+    user_number = request.values.get('From', '').replace('whatsapp:', '')
 
     if not incoming_msg:
-        resp.message("Por favor, envie o número do seu pedido ou CPF para que possamos verificar o status. 📦")
+        resp.message("Por favor, envie uma mensagem para que possamos te ajudar. 📦")
         return str(resp)
 
-    # Se a mensagem for algo genérico tipo "Oi", "Olá", etc
-    if incoming_msg in GENERIC_MESSAGES:
-        resp.message("Olá! 👋 Por favor, envie seu número de pedido ou CPF (somente números) para rastrearmos seu pedido. 📦")
+    # Inicializa a sessão do usuário se não existir
+    if user_number not in user_sessions:
+        user_sessions[user_number] = {"step": "awaiting_name"}
+
+    session = user_sessions[user_number]
+
+    # Se o usuário mandou uma saudação
+    if incoming_msg.lower() in GENERIC_MESSAGES and session["step"] == "awaiting_name":
+        resp.message(
+            "Olá! 👋 Eu sou o Assistente Virtual do Grupo Aqueceletric.\n"
+            "Qual é o seu nome? 😊"
+        )
         return str(resp)
 
-    # Limpa a mensagem para deixar só números
-    cleaned_msg = ''.join(filter(str.isdigit, incoming_msg))
-
-    if not cleaned_msg or len(cleaned_msg) < 6:
-        resp.message("Por favor, envie um número de pedido ou CPF válido. 📦")
+    # Se estamos esperando o nome
+    if session["step"] == "awaiting_name":
+        session["name"] = incoming_msg.strip().title()
+        session["step"] = "awaiting_cpf"
+        resp.message(
+            f"Prazer em te conhecer, {session['name']}! 🤝\n\n"
+            "Agora, poderia me informar seu CPF ou CNPJ para localizarmos seu pedido? 📄"
+        )
         return str(resp)
 
-    try:
-        # Busca o status real ou simulado
-        order_status = get_order_status(cleaned_msg)
-        # Gera uma resposta humanizada via OpenAI
-        humanized_response = generate_humanized_response(order_status)
-        resp.message(humanized_response)
-        
-    except Exception as e:
-        resp.message("Desculpe, tivemos um problema ao processar sua solicitação. "
-                     "Por favor, tente novamente ou entre em contato com nosso suporte. 🙏")
-        print(f"Erro ao processar mensagem: {str(e)}")
-    
+    # Se estamos esperando o CPF ou CNPJ
+    if session["step"] == "awaiting_cpf":
+        cpf_cnpj = ''.join(filter(str.isdigit, incoming_msg))
+
+        if len(cpf_cnpj) < 6:
+            resp.message("O CPF ou CNPJ parece inválido. Por favor, envie apenas números. 📄")
+            return str(resp)
+
+        session["cpf_cnpj"] = cpf_cnpj
+        session["step"] = "awaiting_department"
+
+        # Oferece opções de departamento
+        resp.message(
+            "Ótimo! ✅ Agora, escolha com qual departamento deseja falar:\n\n"
+            "🛒 *Envios e Rastreamentos*\n"
+            "🎯 *Atendimento Comercial*\n"
+            "🛠️ *Suporte Técnico*\n\n"
+            "Digite exatamente uma das opções acima."
+        )
+        return str(resp)
+
+    # Se estamos esperando a escolha do departamento
+    if session["step"] == "awaiting_department":
+        department = incoming_msg.lower()
+
+        if "envios" in department or "rastreamento" in department:
+            session["step"] = "tracking"
+            resp.message("Perfeito! 📦 Vou localizar o status do seu pedido. Um momento...")
+
+            try:
+                order_status = get_order_status(session["cpf_cnpj"])
+                humanized_response = generate_humanized_response(order_status)
+                resp.message(humanized_response)
+
+                # Após rastrear, limpa a sessão
+                del user_sessions[user_number]
+            except Exception as e:
+                resp.message("Desculpe, tivemos um problema ao processar seu rastreamento. 🙏")
+                print(f"Erro ao rastrear pedido: {str(e)}")
+
+            return str(resp)
+
+        elif "atendimento" in department:
+            resp.message(
+                "Ótimo! 🎯 Você está sendo direcionado para o *Atendimento Comercial*.\n\n"
+                "Nosso time está disponível para tirar dúvidas sobre:\n"
+                "- Produtos\n"
+                "- Orçamentos\n"
+                "- Prazo de entrega\n"
+                "- Pagamentos\n\n"
+                "Por favor, aguarde alguns instantes que um atendente irá te chamar. 🧑‍💼✨"
+            )
+            del user_sessions[user_number]
+            return str(resp)
+
+        elif "suporte" in department:
+            resp.message(
+                "Tudo certo! 🛠️ Você está sendo direcionado para o *Suporte Técnico*.\n\n"
+                "Nosso time pode te ajudar com:\n"
+                "- Dúvidas técnicas\n"
+                "- Instalação de produtos\n"
+                "- Garantia e manutenção\n\n"
+                "Aguarde um momento enquanto um especialista entra em contato. 🔧💬"
+            )
+            del user_sessions[user_number]
+            return str(resp)
+
+        else:
+            resp.message(
+                "Desculpe, não entendi sua escolha. 😕\n"
+                "Por favor, digite exatamente uma das opções:\n"
+                "🛒 *Envios e Rastreamentos*\n"
+                "🎯 *Atendimento Comercial*\n"
+                "🛠️ *Suporte Técnico*"
+            )
+            return str(resp)
+
+    # Se por algum motivo cair fora do fluxo
+    resp.message("Desculpe, não entendi. Vamos começar novamente. 👋")
+    del user_sessions[user_number]
     return str(resp)
 
 @webhook_bp.route('/health', methods=['GET'])
