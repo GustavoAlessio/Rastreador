@@ -7,7 +7,7 @@ import re
 
 webhook_bp = Blueprint('webhook', __name__)
 
-# Armazena sessões de usuários
+# Sessões de usuários
 user_sessions = {}
 
 # Palavras que são apenas saudações
@@ -23,16 +23,20 @@ def webhook():
         resp.message("Por favor, envie uma mensagem para que possamos te ajudar. 📦")
         return str(resp)
 
-    # Inicializa a sessão do usuário se não existir
+    # Inicia sessão se necessário
     if user_number not in user_sessions:
-        user_sessions[user_number] = {"step": "awaiting_name"}
+        user_sessions[user_number] = {
+            "step": "awaiting_name",
+            "attempts": 0  # contador de erros
+        }
 
     session = user_sessions[user_number]
 
-    # Se o usuário mandou uma saudação
+    # Se o usuário mandar uma saudação
     if incoming_msg.lower() in GENERIC_MESSAGES and session["step"] == "awaiting_name":
         resp.message(
-            "Olá! 👋 Eu sou o Assistente Virtual do Grupo Aqueceletric.\n"
+            "Olá! 👋 Seja bem-vindo ao *Grupo Aqueceletric*.\n"
+            "Eu sou seu assistente virtual e estou aqui para te ajudar. 🤖\n\n"
             "Qual é o seu nome? 😊"
         )
         return str(resp)
@@ -42,29 +46,38 @@ def webhook():
         session["name"] = incoming_msg.strip().title()
         session["step"] = "awaiting_cpf"
         resp.message(
-            f"Prazer em te conhecer, {session['name']}! 🤝\n\n"
-            "Agora, poderia me informar seu CPF ou CNPJ para localizarmos seu pedido? 📄"
+            f"Prazer em te conhecer, *{session['name']}*! 🤝\n\n"
+            "Agora, por gentileza, me informe seu *CPF* (11 dígitos) ou *CNPJ* (14 dígitos), apenas números. 📄"
         )
         return str(resp)
 
-    # Se estamos esperando o CPF ou CNPJ
+    # Se estamos esperando CPF ou CNPJ
     if session["step"] == "awaiting_cpf":
         cpf_cnpj = ''.join(filter(str.isdigit, incoming_msg))
 
-        if len(cpf_cnpj) < 6:
-            resp.message("O CPF ou CNPJ parece inválido. Por favor, envie apenas números. 📄")
+        if len(cpf_cnpj) == 11:
+            session["cpf_cnpj"] = cpf_cnpj
+            session["document_type"] = "CPF"
+        elif len(cpf_cnpj) == 14:
+            session["cpf_cnpj"] = cpf_cnpj
+            session["document_type"] = "CNPJ"
+        else:
+            resp.message(
+                "O número enviado não parece ser um CPF (11 dígitos) ou CNPJ (14 dígitos) válido. ❌\n\n"
+                "Por favor, envie novamente apenas números. 📄"
+            )
             return str(resp)
 
-        session["cpf_cnpj"] = cpf_cnpj
         session["step"] = "awaiting_department"
 
         # Envia o menu numerado
         resp.message(
-            "Ótimo! ✅ Agora, escolha com qual departamento deseja falar:\n\n"
-            "1️⃣ *Envios e Rastreamentos*\n"
-            "2️⃣ *Atendimento Comercial*\n"
-            "3️⃣ *Suporte Técnico*\n\n"
-            "Por favor, responda apenas com o número da opção desejada. 🔢"
+            "✅ *CPF/CNPJ recebido com sucesso!*\n\n"
+            "Agora, escolha o departamento que deseja falar:\n\n"
+            "1️⃣ *Envios e Rastreamentos* (acompanhar seu pedido)\n"
+            "2️⃣ *Atendimento Comercial* (dúvidas sobre produtos e vendas)\n"
+            "3️⃣ *Suporte Técnico* (ajuda com instalação ou problemas)\n\n"
+            "*Por favor, responda apenas com o número da opção.* 🔢"
         )
         return str(resp)
 
@@ -74,55 +87,61 @@ def webhook():
 
         if option == "1":
             session["step"] = "tracking"
-            resp.message("Perfeito! 📦 Vou localizar o status do seu pedido. Um momento...")
+            resp.message("🔍 Localizando o status do seu pedido. Um momento, por favor...")
 
             try:
                 order_status = get_order_status(session["cpf_cnpj"])
                 humanized_response = generate_humanized_response(order_status)
                 resp.message(humanized_response)
 
-                # Após rastrear, limpa a sessão
+                # Finaliza atendimento após rastrear
+                resp.message("Agradecemos pelo contato com o *Grupo Aqueceletric*! ✨\nEstamos sempre à disposição. 👋")
                 del user_sessions[user_number]
             except Exception as e:
-                resp.message("Desculpe, tivemos um problema ao processar seu rastreamento. 🙏")
+                resp.message("Desculpe, tivemos um problema ao rastrear seu pedido. 🙏")
                 print(f"Erro ao rastrear pedido: {str(e)}")
-
             return str(resp)
 
         elif option == "2":
             resp.message(
-                "Ótimo! 🎯 Você está sendo direcionado para o *Atendimento Comercial*.\n\n"
-                "Nosso time está disponível para tirar dúvidas sobre:\n"
-                "- Produtos\n"
-                "- Orçamentos\n"
-                "- Prazo de entrega\n"
-                "- Pagamentos\n\n"
-                "Por favor, aguarde alguns instantes que um atendente irá te chamar. 🧑‍💼✨"
+                "🎯 Encaminhando você para o nosso *Atendimento Comercial*.\n\n"
+                "Clique no link abaixo para continuar:\n"
+                "👉 https://wa.me/5515996730603\n\n"
+                "Nosso time vai te atender em instantes! 🧑‍💼✨"
             )
             del user_sessions[user_number]
             return str(resp)
 
         elif option == "3":
             resp.message(
-                "Tudo certo! 🛠️ Você está sendo direcionado para o *Suporte Técnico*.\n\n"
-                "Nosso time pode te ajudar com:\n"
-                "- Dúvidas técnicas\n"
-                "- Instalação de produtos\n"
-                "- Garantia e manutenção\n\n"
-                "Aguarde um momento enquanto um especialista entra em contato. 🔧💬"
+                "🛠️ Encaminhando você para o nosso *Suporte Técnico*.\n\n"
+                "Clique no link abaixo para continuar:\n"
+                "👉 https://wa.me/5515996730603\n\n"
+                "Um especialista irá te atender! 🔧💬"
             )
             del user_sessions[user_number]
             return str(resp)
 
         else:
-            resp.message(
-                "Desculpe, não entendi sua escolha. 😕\n"
-                "Por favor, responda apenas com o número:\n"
-                "1️⃣ *Envios e Rastreamentos*\n"
-                "2️⃣ *Atendimento Comercial*\n"
-                "3️⃣ *Suporte Técnico*"
-            )
-            return str(resp)
+            # Se digitou errado
+            session["attempts"] += 1
+            if session["attempts"] >= 3:
+                resp.message(
+                    "Parece que tivemos algumas dificuldades para entender sua escolha. 😕\n"
+                    "Vamos reiniciar o atendimento. Por favor, envie *Oi* para começarmos novamente. 👋"
+                )
+                del user_sessions[user_number]
+                return str(resp)
+            else:
+                resp.message(
+                    "Desculpe, não entendi sua escolha. 😕\n\n"
+                    "Por favor, responda apenas com o número:\n"
+                    "1️⃣ *Envios e Rastreamentos*\n"
+                    "2️⃣ *Atendimento Comercial*\n"
+                    "3️⃣ *Suporte Técnico*\n\n"
+                    "*Digite apenas 1, 2 ou 3.* 🔢"
+                )
+                return str(resp)
 
     # Se cair fora do fluxo
     resp.message("Desculpe, não entendi. Vamos começar novamente. 👋")
