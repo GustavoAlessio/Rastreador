@@ -1,156 +1,146 @@
-from flask import Blueprint, request, Response
+from flask import Blueprint, request, jsonify
 from twilio.twiml.messaging_response import MessagingResponse
 from app.order_tracking import get_order_status
 from app.openai_integration import generate_humanized_response
+import os
 import re
 
 webhook_bp = Blueprint('webhook', __name__)
 
-# Controle de sessão em memória
+# Sessões de usuários
 user_sessions = {}
 
-@webhook_bp.route("/webhook", methods=["POST"])
+# Palavras que são apenas saudações
+GENERIC_MESSAGES = ["oi", "olá", "hello", "hi", "bom dia", "boa tarde", "boa noite"]
+
+@webhook_bp.route('/webhook', methods=['POST'])
 def webhook():
-    incoming_msg = request.values.get('Body', '').strip()
-    from_number = request.values.get('From', '')
-    incoming_msg_lower = incoming_msg.lower()
-
     resp = MessagingResponse()
-    msg = resp.message()
+    incoming_msg = request.values.get('Body', '').strip()
+    user_number = request.values.get('From', '').replace('whatsapp:', '')
 
-    session = user_sessions.get(from_number, {"step": "main_menu"})
+    if not incoming_msg:
+        resp.message("Por favor, envie uma mensagem para que possamos te ajudar. 📦")
+        return str(resp)
 
-    def reset_session():
-        user_sessions[from_number] = {"step": "main_menu"}
+    # Inicia sessão se necessário
+    if user_number not in user_sessions:
+        user_sessions[user_number] = {
+            "step": "awaiting_name",
+            "attempts": 0  # contador de erros
+        }
 
-    # Fluxo principal
-    if any(word in incoming_msg_lower for word in ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite"]):
-        reset_session()
-        msg.body(
-            "👋 Olá! Seja bem-vindo(a) ao Grupo Aqueceletric, especialistas em peças e equipamentos para gastronomia industrial!\n\n"
-            "Escolha uma opção:\n\n"
-            "1⃣ Buscar peça/equipamento 🔎\n"
-            "2⃣ Acompanhar pedido 📦\n"
-            "3⃣ Solicitar orçamento 📄\n"
-            "4⃣ Exportação / Comércio Exterior 🌎\n"
-            "5⃣ Falar com atendimento humano 👤\n"
-            "6⃣ Perguntas Frequentes ❓"
+    session = user_sessions[user_number]
+
+    # Se o usuário mandar uma saudação
+    if incoming_msg.lower() in GENERIC_MESSAGES and session["step"] == "awaiting_name":
+        resp.message(
+            "Olá! 👋 Seja bem-vindo ao *Grupo Aqueceletric*.\n"
+            "Eu sou seu assistente virtual e estou aqui para te ajudar. 🤖\n\n"
+            "Qual é o seu nome? 😊"
         )
+        return str(resp)
 
-    elif incoming_msg.startswith("1"):
-        reset_session()
-        msg.body(
-            "🔎 Catálogo de Peças e Equipamentos\n\n"
-            "📄 Acesse nosso catálogo completo aqui:\n"
-            "👉 https://grupoaqueceletric.com.br/cartalogo/catalogo_aqueceletric.pdf\n\n"
-            "💬 Fale diretamente com um especialista:\n"
-            "👉 https://wa.me/5515996730603\n\n"
-            "Estamos prontos para te ajudar! 🚀"
+    # Se estamos esperando o nome
+    if session["step"] == "awaiting_name":
+        session["name"] = incoming_msg.strip().title()
+        session["step"] = "awaiting_cpf"
+        resp.message(
+            f"Prazer em te conhecer, *{session['name']}*! 🤝\n\n"
+            "Agora, por gentileza, me informe seu *CPF* (11 dígitos) ou *CNPJ* (14 dígitos), apenas números. 📄"
         )
+        return str(resp)
 
-    elif incoming_msg.startswith("2"):
-        session["step"] = "tracking"
-        msg.body(
-            "📦 Vamos acompanhar seu pedido!\n\n"
-            "Por favor, envie:\n"
-            "- Número do pedido\nOU\n- CPF/CNPJ utilizado na compra."
-        )
+    # Se estamos esperando CPF ou CNPJ
+    if session["step"] == "awaiting_cpf":
+        cpf_cnpj = ''.join(filter(str.isdigit, incoming_msg))
 
-    elif incoming_msg.startswith("3"):
-        reset_session()
-        msg.body(
-            "📄 Solicitar Orçamento\n\n"
-            "💬 Fale diretamente com nosso time de vendas pelo WhatsApp:\n"
-            "👉 https://wa.me/5515996730603\n\n"
-            "Estamos prontos para te atender! 🚀"
-        )
-
-    elif incoming_msg.startswith("4"):
-        reset_session()
-        msg.body(
-            "🌎 Exportação / Comércio Exterior\n\n"
-            "💬 Fale diretamente com nosso time de exportação pelo WhatsApp:\n"
-            "👉 https://wa.me/5515996730603\n\n"
-            "Estamos à disposição para atender sua necessidade internacional! 🚀"
-        )
-
-    elif incoming_msg.startswith("5"):
-        reset_session()
-        msg.body(
-            "👤 Falar com Atendimento Humano\n\n"
-            "💬 Clique no link abaixo para conversar com um de nossos atendentes:\n"
-            "👉 https://wa.me/5515996730603\n\n"
-            "Estamos prontos para te ajudar! 🚀"
-        )
-
-    elif incoming_msg.startswith("6"):
-        session["step"] = "faq"
-        msg.body(
-            "❓ Perguntas Frequentes\n\n"
-            "Digite uma das opções para saber mais:\n\n"
-            "- Entrega\n"
-            "- Marcas\n"
-            "- Garantia\n"
-            "- Prazo\n"
-            "- Assistência\n\n"
-            "Ou digite \"menu\" para voltar."
-        )
-
-    elif session.get("step") == "tracking":
-        numbers_only = re.sub(r'\D', '', incoming_msg)
-        if len(numbers_only) >= 6:
-            order_status = get_order_status(numbers_only)
-            humanized_response = generate_humanized_response(order_status)
-            msg.body(humanized_response)
-            reset_session()
+        if len(cpf_cnpj) == 11:
+            session["cpf_cnpj"] = cpf_cnpj
+            session["document_type"] = "CPF"
+        elif len(cpf_cnpj) == 14:
+            session["cpf_cnpj"] = cpf_cnpj
+            session["document_type"] = "CNPJ"
         else:
-            msg.body(
-                "❗ Por favor, envie um número de pedido válido ou CPF/CNPJ correto."
+            resp.message(
+                "O número enviado não parece ser um CPF (11 dígitos) ou CNPJ (14 dígitos) válido. ❌\n\n"
+                "Por favor, envie novamente apenas números. 📄"
             )
+            return str(resp)
 
-    elif session.get("step") == "faq":
-        faq_question = incoming_msg_lower
+        session["step"] = "awaiting_department"
 
-        if "entrega" in faq_question:
-            msg.body("🚚 Sim! Entregamos para todo o Brasil 🌟 com transportadoras parceiras confiáveis.")
-        elif "marcas" in faq_question:
-            msg.body("🏷️ Trabalhamos com marcas como Venâncio, Progás, Gpaniz, Marchesoni e outras líderes do mercado. 🔥")
-        elif "garantia" in faq_question:
-            msg.body("✅ Todos os nossos produtos possuem garantia conforme o fabricante. Pode comprar tranquilo(a)!")
-        elif "prazo" in faq_question:
-            msg.body("⏳ O prazo de entrega varia conforme sua cidade e transportadora. Mas enviamos rapidinho! 🚚")
-        elif "assistencia" in faq_question:
-            msg.body(
-                "🛠️ Para assistência, entre em contato com nosso time de vendas:\n"
-                "👉 https://wa.me/5515996730603"
-            )
-        elif "menu" in faq_question:
-            reset_session()
-            msg.body(
-                "👋 Voltando ao menu principal...\n\n"
-                "Escolha uma opção:\n\n"
-                "1⃣ Buscar peça/equipamento 🔎\n"
-                "2⃣ Acompanhar pedido 📦\n"
-                "3⃣ Solicitar orçamento 📄\n"
-                "4⃣ Exportação / Comércio Exterior 🌎\n"
-                "5⃣ Falar com atendimento humano 👤\n"
-                "6⃣ Perguntas Frequentes ❓"
-            )
-        else:
-            msg.body(
-                "❗ Não entendi sua pergunta.\n\n"
-                "Digite uma das opções:\n"
-                "- Entrega\n- Marcas\n- Garantia\n- Prazo\n- Assistência\n\n"
-                "Ou digite \"menu\" para voltar."
-            )
-
-    else:
-        reset_session()
-        msg.body(
-            "⚠️ Desculpe, não entendi sua mensagem.\n\n"
-            "Digite \"Olá\" para ver o menu principal."
+        # Envia o menu numerado
+        resp.message(
+            "✅ *CPF/CNPJ recebido com sucesso!*\n\n"
+            "Agora, escolha o departamento que deseja falar:\n\n"
+            "1️⃣ *Envios e Rastreamentos* (acompanhar seu pedido)\n"
+            "2️⃣ *Atendimento Comercial* (dúvidas sobre produtos e vendas)\n"
+            "3️⃣ *Suporte Técnico* (ajuda com instalação ou problemas)\n\n"
+            "*Por favor, responda apenas com o número da opção.* 🔢"
         )
+        return str(resp)
 
-    user_sessions[from_number] = session
+    # Se estamos esperando a escolha do departamento
+    if session["step"] == "awaiting_department":
+        option = incoming_msg.strip()
 
-    return Response(str(resp), mimetype="application/xml")
+        if option == "1":
+            session["step"] = "tracking"
+            resp.message("🔍 Localizando o status do seu pedido. Um momento, por favor...")
+
+            try:
+                order_status = get_order_status(session["cpf_cnpj"])
+                humanized_response = generate_humanized_response(order_status)
+                resp.message(humanized_response)
+
+                # Finaliza atendimento após rastrear
+                resp.message("Agradecemos pelo contato com o *Grupo Aqueceletric*! ✨\nEstamos sempre à disposição. 👋")
+                del user_sessions[user_number]
+            except Exception as e:
+                resp.message("Desculpe, tivemos um problema ao rastrear seu pedido. 🙏")
+                print(f"Erro ao rastrear pedido: {str(e)}")
+            return str(resp)
+
+        elif option == "2":
+            resp.message(
+                "🎯 Encaminhando você para o nosso *Atendimento Comercial*.\n\n"
+                "Clique no link abaixo para continuar:\n"
+                "👉 https://wa.me/5515996730603\n\n"
+                "Nosso time vai te atender em instantes! 🧑‍💼✨"
+            )
+            del user_sessions[user_number]
+            return str(resp)
+
+        elif option == "3":
+            resp.message(
+                "🛠️ Encaminhando você para o nosso *Suporte Técnico*.\n\n"
+                "Clique no link abaixo para continuar:\n"
+                "👉 https://wa.me/5515996730603\n\n"
+                "Um especialista irá te atender! 🔧💬"
+            )
+            del user_sessions[user_number]
+            return str(resp)
+
+        else:
+            # Se digitou errado
+            session["attempts"] += 1
+            if session["attempts"] >= 3:
+                resp.message(
+                    "Parece que tivemos algumas dificuldades para entender sua escolha. 😕\n"
+                    "Vamos reiniciar o atendimento. Por favor, envie *Oi* para começarmos novamente. 👋"
+                )
+                del user_sessions[user_number]
+                return str(resp)
+            else:
+                resp.message(
+                    "Desculpe, não entendi sua escolha. 😕\n\n"
+                    "Por favor, responda apenas com o número:\n"
+                    "1️⃣ *Envios e Rastreamentos*\n"
+                    "2️⃣ *Atendimento Comercial*\n"
+                    "3️⃣ *Suporte Técnico*\n\n"
+                    "*Digite apenas 1, 2 ou 3.* 🔢"
+                )
+                return str(resp)
+
+    # Se cair fora do fluxo
