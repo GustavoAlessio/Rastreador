@@ -3,6 +3,7 @@ from twilio.twiml.messaging_response import MessagingResponse
 from app.order_tracking import get_order_status
 from app.openai_integration import generate_humanized_response
 import os
+import re
 
 webhook_bp = Blueprint('webhook', __name__)
 
@@ -13,7 +14,7 @@ def webhook():
     
     Fluxo:
     1. Recebe a mensagem do cliente via Twilio
-    2. Extrai o número do pedido ou CPF da mensagem
+    2. Valida se é um número de pedido ou CPF
     3. Consulta o status do pedido (simulado ou API real)
     4. Envia o status para a OpenAI para humanizar a resposta
     5. Retorna a resposta humanizada para o cliente via Twilio
@@ -25,12 +26,20 @@ def webhook():
     incoming_msg = request.values.get('Body', '').strip()
     
     if not incoming_msg:
-        resp.message("Por favor, envie o número do seu pedido ou CPF para que possamos verificar o status.")
+        resp.message("Por favor, envie o número do seu pedido ou CPF para que possamos verificar o status. 📦")
         return str(resp)
-    
+
+    # Verificação simples para evitar resposta aleatória em qualquer mensagem
+    cleaned_msg = ''.join(filter(str.isdigit, incoming_msg))  # Mantém apenas números
+
+    # Se a mensagem não tiver pelo menos 6 dígitos (pedido) ou 11 dígitos (CPF), pede para enviar corretamente
+    if len(cleaned_msg) < 6:
+        resp.message("Olá! 👋 Por favor, envie seu número de pedido ou CPF (somente números) para que eu possa localizar sua compra. 📦")
+        return str(resp)
+
     try:
-        # Consulta o status do pedido (simulado ou API real)
-        order_status = get_order_status(incoming_msg)
+        # Consulta o status do pedido
+        order_status = get_order_status(cleaned_msg)
         
         # Gera uma resposta humanizada usando a OpenAI
         humanized_response = generate_humanized_response(order_status)
@@ -41,7 +50,7 @@ def webhook():
     except Exception as e:
         # Em caso de erro, envia uma mensagem amigável
         resp.message("Desculpe, tivemos um problema ao processar sua solicitação. "
-                    "Por favor, tente novamente em alguns instantes ou entre em contato com nosso suporte.")
+                     "Por favor, tente novamente ou entre em contato com nosso suporte. 🙏")
         print(f"Erro ao processar mensagem: {str(e)}")
     
     return str(resp)
