@@ -43,7 +43,7 @@ def webhook():
         user_sessions[user_number] = session
         resp.message(
             f"Prazer em te conhecer, *{session['name']}*! 🤝\n\n"
-            "Agora, por favor, envie seu CPF ou CNPJ, apenas números. 📄"
+            "Agora, por favor, envie seu *CPF* (11 dígitos) ou *CNPJ* (14 dígitos), apenas números. 📄"
         )
         return str(resp)
 
@@ -64,8 +64,8 @@ def webhook():
             "✅ Documento recebido!\n\n"
             "Escolha o departamento:\n"
             "1️⃣ *Envios e Rastreamentos*\n"
-            "2️⃣ *Compras e Orçamentos*\n"
-            "3️⃣ *Atendimento Humano*\n\n"
+            "2️⃣ *Atendimento Comercial*\n"
+            "3️⃣ *Suporte Técnico*\n\n"
             "*Responda apenas com o número.* 🔢"
         )
         return str(resp)
@@ -79,15 +79,19 @@ def webhook():
             resp.message("🔍 Localizando seu pedido. Um momento...")
 
             try:
+                # Consulta o status do pedido
                 order_status = get_order_status(session["cpf_cnpj"])
+                
+                # Gera a resposta humanizada via OpenAI
                 humanized_response = generate_humanized_response(order_status)
+
                 resp.message(humanized_response)
                 resp.message("Agradecemos seu contato com o *Grupo Aqueceletric*! ✨👋")
+                user_sessions.pop(user_number, None)  # Finaliza sessão
             except Exception as e:
                 print(f"Erro ao rastrear pedido: {e}")
                 resp.message("Ocorreu um erro ao localizar seu pedido. 😔 Tente novamente mais tarde.")
-
-            user_sessions.pop(user_number, None)
+                user_sessions.pop(user_number, None)
             return str(resp)
 
         elif option == "2":
@@ -100,22 +104,16 @@ def webhook():
 
         elif option == "3":
             resp.message(
-                "🛠️ Encaminhando para o *Atendimento Humano*.\n"
+                "🛠️ Encaminhando para o *Suporte Técnico*.\n"
                 "👉 https://wa.me/5515996730603"
             )
             user_sessions.pop(user_number, None)
             return str(resp)
 
         else:
-            resp.message(
-                "Opção inválida! ❌ Por favor, responda apenas com:\n"
-                "1️⃣ *Envios e Rastreamentos*\n"
-                "2️⃣ *Compras e Orçamentosl*\n"
-                "3️⃣ *Atendimento Humano*\n\n"
-                "Digite apenas o número da opção. 🔢"
-            )
+            resp.message("Opção inválida! ❌ Responda apenas com 1, 2 ou 3. 🔢")
             return str(resp)
 
-    # Se o usuário enviar qualquer outra coisa inesperada
+    # Se não entender o que o usuário mandou
     resp.message("Não entendi sua mensagem. Por favor, envie *Oi* para começarmos! 👋")
     return str(resp)
