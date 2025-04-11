@@ -6,10 +6,10 @@ import re
 
 webhook_bp = Blueprint('webhook', __name__)
 
-# Sessões dos usuários
+# User sessions
 user_sessions = {}
 
-# Palavras que são apenas saudações
+# Generic greetings
 GENERIC_MESSAGES = ["oi", "olá", "hello", "hi", "bom dia", "boa tarde", "boa noite"]
 
 @webhook_bp.route('/webhook', methods=['POST'])
@@ -22,23 +22,22 @@ def webhook():
         resp.message("Por favor, envie uma mensagem para que possamos te ajudar. 📦")
         return str(resp)
 
-    # Obter sessão atual do usuário
+    # Retrieve user's current session
     session = user_sessions.get(user_number, {"step": "awaiting_start"})
 
-    # Fluxo de saudação inicial
+    # Handle initial greetings
     if incoming_msg.lower() in GENERIC_MESSAGES:
         user_sessions[user_number] = {"step": "awaiting_name"}
         resp.message(
-            "Olá! 👋 Seja bem-vindo ao *Grupo Aqueceletric*.\n"
+            "Olá! 👋 Seja bem-vindo ao *Grupo Aqueceletric*"
             "Eu sou seu assistente virtual. 🤖\n\n"
             "Qual é o seu nome? 😊"
         )
         return str(resp)
 
-    # Identifica em qual etapa o usuário está
+    # Determine user step
     step = session.get("step", "awaiting_start")
 
-    # Perguntar o nome
     if step == "awaiting_name":
         session["name"] = incoming_msg.title()
         session["step"] = "awaiting_cpf"
@@ -49,28 +48,22 @@ def webhook():
         )
         return str(resp)
 
-    # Perguntar CPF ou CNPJ
     if step == "awaiting_cpf":
-        cpf_cnpj = re.sub(r'\D', '', incoming_msg)  # Remove tudo que não é número
+        cpf_cnpj = re.sub(r'\D', '', incoming_msg)
 
         if len(cpf_cnpj) == 11 or len(cpf_cnpj) == 14:
-            # CPF ou CNPJ válido
             session["cpf_cnpj"] = cpf_cnpj
             session["step"] = "awaiting_department"
             user_sessions[user_number] = session
-
             resp.message(
                 "✅ Documento recebido!\n\n"
                 "Escolha o departamento desejado:\n"
-                "1️⃣ *Envios e Rastreamentos*\n"
-                "2️⃣ *Compras e Orçamentos*\n"
-                "3️⃣ *Atendimento Humano*\n\n"
+                "1⃣ *Envios e Rastreamentos*\n"
+                "2⃣ *Compras e Orçamentos*\n"
+                "3⃣ *Atendimento Humano*\n\n"
                 "*Responda apenas com o número.* 🔢"
             )
-            return str(resp)
-
         else:
-            # CPF ou CNPJ inválido
             resp.message(
                 "❌ CPF ou CNPJ inválido!\n\n"
                 "Por favor, envie apenas números:\n"
@@ -78,9 +71,8 @@ def webhook():
                 "- *CNPJ* (14 dígitos)\n\n"
                 "Tente novamente. 📄"
             )
-            return str(resp)
+        return str(resp)
 
-    # Escolher departamento
     if step == "awaiting_department":
         option = incoming_msg.strip()
 
@@ -88,7 +80,6 @@ def webhook():
             session["step"] = "tracking"
             user_sessions[user_number] = session
             resp.message("🔍 Localizando seu pedido. Um momento...")
-
             try:
                 order_status = get_order_status(session["cpf_cnpj"])
                 humanized_response = generate_humanized_response(order_status)
@@ -97,8 +88,8 @@ def webhook():
             except Exception as e:
                 print(f"Erro ao rastrear pedido: {e}")
                 resp.message("Ocorreu um erro ao localizar seu pedido. 😔 Tente novamente mais tarde.")
-
-            user_sessions.pop(user_number, None)
+            finally:
+                user_sessions.pop(user_number, None)
             return str(resp)
 
         elif option == "2":
@@ -120,13 +111,13 @@ def webhook():
         else:
             resp.message(
                 "Opção inválida! ❌ Por favor, responda apenas com:\n"
-                "1️⃣ *Envios e Rastreamentos*\n"
-                "2️⃣ *Compras e Orçamentos*\n"
-                "3️⃣ *Atendimento Humano*\n\n"
+                "1⃣ *Envios e Rastreamentos*\n"
+                "2⃣ *Compras e Orçamentos*\n"
+                "3⃣ *Atendimento Humano*\n\n"
                 "Digite apenas o número da opção. 🔢"
             )
             return str(resp)
 
-    # Se o usuário enviar qualquer outra coisa inesperada
+    # Fallback for unexpected inputs
     resp.message("Não entendi sua mensagem. Por favor, envie *Oi* para começarmos! 👋")
     return str(resp)
