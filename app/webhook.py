@@ -9,9 +9,6 @@ webhook_bp = Blueprint('webhook', __name__)
 # User sessions
 user_sessions = {}
 
-# Generic greetings
-GENERIC_MESSAGES = ["oi", "olá", "hello", "hi", "bom dia", "boa tarde", "boa noite"]
-
 @webhook_bp.route('/webhook', methods=['POST'])
 def webhook():
     resp = MessagingResponse()
@@ -25,8 +22,8 @@ def webhook():
     # Retrieve user's current session
     session = user_sessions.get(user_number, {"step": "awaiting_start"})
 
-    # Handle initial greetings
-    if incoming_msg.lower() in GENERIC_MESSAGES:
+    # Sempre iniciar se for a primeira mensagem
+    if session.get("step") == "awaiting_start":
         user_sessions[user_number] = {"step": "awaiting_name"}
         resp.message(
             "Olá! 👋 Seja bem-vindo ao *Grupo Aqueceletric*\n"
@@ -51,7 +48,7 @@ def webhook():
     if step == "awaiting_cpf":
         cpf_cnpj = re.sub(r'\D', '', incoming_msg)
 
-        if len(cpf_cnpj) == 11 or len(cpf_cnpj) == 14:
+        if cpf_cnpj.isdigit() and (len(cpf_cnpj) == 11 or len(cpf_cnpj) == 14):
             session["cpf_cnpj"] = cpf_cnpj
             session["step"] = "awaiting_department"
             user_sessions[user_number] = session
@@ -66,7 +63,7 @@ def webhook():
         else:
             resp.message(
                 "❌ CPF ou CNPJ inválido!\n\n"
-                "Por favor, envie apenas números:\n"
+                "Por favor, envie apenas números válidos:\n"
                 "- *CPF* (11 dígitos)\n"
                 "- *CNPJ* (14 dígitos)\n\n"
                 "Tente novamente. 📄"
@@ -118,6 +115,6 @@ def webhook():
             )
             return str(resp)
 
-    # Fallback for unexpected inputs
-    resp.message("Não entendi sua mensagem. Por favor, envie *Oi* para começarmos! 👋")
+    # Fallback para entradas inesperadas
+    resp.message("Não entendi sua mensagem. Por favor, envie *qualquer mensagem* para começarmos! 👋")
     return str(resp)
