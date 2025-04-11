@@ -22,6 +22,7 @@ def webhook():
         resp.message("Por favor, envie uma mensagem para que possamos te ajudar. 📦")
         return str(resp)
 
+    # Obter sessão atual do usuário
     session = user_sessions.get(user_number, {"step": "awaiting_start"})
 
     # Fluxo de saudação inicial
@@ -37,39 +38,49 @@ def webhook():
     # Identifica em qual etapa o usuário está
     step = session.get("step", "awaiting_start")
 
+    # Perguntar o nome
     if step == "awaiting_name":
         session["name"] = incoming_msg.title()
         session["step"] = "awaiting_cpf"
         user_sessions[user_number] = session
         resp.message(
             f"Prazer em te conhecer, *{session['name']}*! 🤝\n\n"
-            "Agora, por favor, envie seu CPF ou CNPJ, apenas números. 📄"
+            "Agora, por favor, envie seu *CPF* ou *CNPJ* (somente números). 📄"
         )
         return str(resp)
 
+    # Perguntar CPF ou CNPJ
     if step == "awaiting_cpf":
         cpf_cnpj = re.sub(r'\D', '', incoming_msg)  # Remove tudo que não é número
 
-        if not cpf_cnpj.isdigit() or len(cpf_cnpj) not in [11, 14]:
+        if len(cpf_cnpj) == 11 or len(cpf_cnpj) == 14:
+            # CPF ou CNPJ válido
+            session["cpf_cnpj"] = cpf_cnpj
+            session["step"] = "awaiting_department"
+            user_sessions[user_number] = session
+
             resp.message(
-                "Número inválido! ❌ Por favor, envie apenas o *CPF* (11 dígitos) ou *CNPJ* (14 dígitos), sem pontos, traços ou espaços. 📄"
+                "✅ Documento recebido!\n\n"
+                "Escolha o departamento desejado:\n"
+                "1️⃣ *Envios e Rastreamentos*\n"
+                "2️⃣ *Compras e Orçamentos*\n"
+                "3️⃣ *Atendimento Humano*\n\n"
+                "*Responda apenas com o número.* 🔢"
             )
             return str(resp)
 
-        session["cpf_cnpj"] = cpf_cnpj
-        session["step"] = "awaiting_department"
-        user_sessions[user_number] = session
+        else:
+            # CPF ou CNPJ inválido
+            resp.message(
+                "❌ CPF ou CNPJ inválido!\n\n"
+                "Por favor, envie apenas números:\n"
+                "- *CPF* (11 dígitos)\n"
+                "- *CNPJ* (14 dígitos)\n\n"
+                "Tente novamente. 📄"
+            )
+            return str(resp)
 
-        resp.message(
-            "✅ Documento recebido!\n\n"
-            "Escolha o departamento:\n"
-            "1️⃣ *Envios e Rastreamentos*\n"
-            "2️⃣ *Compras e Orçamentos*\n"
-            "3️⃣ *Atendimento Humano*\n\n"
-            "*Responda apenas com o número.* 🔢"
-        )
-        return str(resp)
-
+    # Escolher departamento
     if step == "awaiting_department":
         option = incoming_msg.strip()
 
@@ -92,7 +103,7 @@ def webhook():
 
         elif option == "2":
             resp.message(
-                "🎯 Encaminhando para o *Atendimento Comercial*.\n"
+                "🎯 Encaminhando para o *Departamento de Compras e Orçamentos*.\n"
                 "👉 https://wa.me/5515996730603"
             )
             user_sessions.pop(user_number, None)
@@ -110,7 +121,7 @@ def webhook():
             resp.message(
                 "Opção inválida! ❌ Por favor, responda apenas com:\n"
                 "1️⃣ *Envios e Rastreamentos*\n"
-                "2️⃣ *Compras e Orçamentosl*\n"
+                "2️⃣ *Compras e Orçamentos*\n"
                 "3️⃣ *Atendimento Humano*\n\n"
                 "Digite apenas o número da opção. 🔢"
             )
