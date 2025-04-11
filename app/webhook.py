@@ -1,11 +1,12 @@
 from flask import Blueprint, request
 from twilio.twiml.messaging_response import MessagingResponse
 from app.order_tracking import get_order_status
+from app.openai_integration import generate_humanized_response
 import re
 
 webhook_bp = Blueprint('webhook', __name__)
 
-# Sessões de usuários
+# Sessões dos usuários
 user_sessions = {}
 
 # Palavras que são apenas saudações
@@ -21,7 +22,9 @@ def webhook():
         resp.message("Por favor, envie uma mensagem para que possamos te ajudar. 📦")
         return str(resp)
 
-    # Resetar sessão se saudação recebida
+    session = user_sessions.get(user_number, {"step": "awaiting_start"})
+
+    # Fluxo de saudação inicial
     if incoming_msg.lower() in GENERIC_MESSAGES:
         user_sessions[user_number] = {"step": "awaiting_name"}
         resp.message(
@@ -31,13 +34,11 @@ def webhook():
         )
         return str(resp)
 
-    session = user_sessions.get(user_number, {"step": "awaiting_name"})
-
-    # Fluxo baseado na etapa
-    step = session.get("step")
+    # Identifica em qual etapa o usuário está
+    step = session.get("step", "awaiting_start")
 
     if step == "awaiting_name":
-        session["name"] = incoming_msg.strip().title()
+        session["name"] = incoming_msg.title()
         session["step"] = "awaiting_cpf"
         user_sessions[user_number] = session
         resp.message(
@@ -49,16 +50,11 @@ def webhook():
     if step == "awaiting_cpf":
         cpf_cnpj = re.sub(r'\D', '', incoming_msg)
 
-        if len(cpf_cnpj) == 11:
-            session["cpf_cnpj"] = cpf_cnpj
-            session["document_type"] = "CPF"
-        elif len(cpf_cnpj) == 14:
-            session["cpf_cnpj"] = cpf_cnpj
-            session["document_type"] = "CNPJ"
-        else:
+        if len(cpf_cnpj) not in [11, 14]:
             resp.message("Número inválido! ❌ Envie apenas o CPF (11 dígitos) ou CNPJ (14 dígitos). 📄")
             return str(resp)
 
+        session["cpf_cnpj"] = cpf_cnpj
         session["step"] = "awaiting_department"
         user_sessions[user_number] = session
         resp.message(
@@ -80,13 +76,17 @@ def webhook():
             resp.message("🔍 Localizando seu pedido. Um momento...")
 
             try:
+                # Consulta o status do pedido
                 order_status = get_order_status(session["cpf_cnpj"])
-                simple_response = generate_simple_response(order_status)
-                resp.message(simple_response)
+                
+                # Gera a resposta humanizada via OpenAI
+                humanized_response = generate_humanized_response(order_status)
+
+                resp.message(humanized_response)
                 resp.message("Agradecemos seu contato com o *Grupo Aqueceletric*! ✨👋")
-                user_sessions.pop(user_number, None)
+                user_sessions.pop(user_number, None)  # Finaliza sessão
             except Exception as e:
-                print(f"Erro: {e}")
+                print(f"Erro ao rastrear pedido: {e}")
                 resp.message("Ocorreu um erro ao localizar seu pedido. 😔 Tente novamente mais tarde.")
                 user_sessions.pop(user_number, None)
             return str(resp)
@@ -114,17 +114,3 @@ def webhook():
     # Se cair fora do fluxo
     resp.message("Não entendi sua mensagem. Por favor, envie *Oi* para começarmos! 👋")
     return str(resp)
-
-def generate_simple_response(order_status):
-    status = order_status.get('status', '').lower()
-    carrier = order_status.get('carrier', 'Transportadora')
-    estimated_delivery = order_status.get('estimated_delivery', 'em breve')
-
-    if "em trânsito" in status:
-        return f"🚚 Seu pedido está a caminho com a {carrier}! Previsão de entrega: {estimated_delivery}."
-    elif "saiu para entrega" in status:
-        return f"📦 Seu pedido saiu para entrega e deve chegar hoje! Fique atento. ✨"
-    elif "entregue" in status:
-        return f"🎉 Pedido entregue com sucesso! Agradecemos por comprar conosco. ✨"
-    else:
-        return f"Estamos monitorando seu pedido. 🚚 Qualquer novidade, avisaremos!"

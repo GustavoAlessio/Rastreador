@@ -25,43 +25,64 @@ DEFAULT_TIMEOUT = 5  # Segundos para timeout padrão
 
 def fetch_braspress_tracking(order_number):
     """Busca o rastreamento na Braspress."""
-    try:
-        cnpj = os.getenv("BRASPRESS_CNPJ")
-        url = f"https://api.braspress.com/v3/tracking/byNumPedido/{cnpj}/{order_number}/json"
+    cnpj = os.getenv("BRASPRESS_CNPJ")
+    if not cnpj:
+        print("[Braspress] CNPJ não configurado.")
+        return None
 
+    try:
+        url = f"https://api.braspress.com/v3/tracking/byNumPedido/{cnpj}/{order_number}/json"
         response = requests.get(url, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
-        tracking_data = response.json()
+
+        try:
+            tracking_data = response.json()
+        except Exception as e:
+            print(f"[Braspress] Erro ao ler JSON: {e}")
+            return None
 
         if tracking_data and isinstance(tracking_data, list):
             return parse_tracking_response(order_number, tracking_data[-1], "Braspress")
+
     except Exception as e:
-        print(f"[Braspress] Erro: {e}")
+        print(f"[Braspress] Erro na API: {e}")
     return None
 
 def fetch_correios_tracking(order_number):
     """Busca o rastreamento nos Correios."""
-    try:
-        correios_user = os.getenv("CORREIOS_USER")
-        correios_pass = os.getenv("CORREIOS_PASS")
-        url = f"https://api.linkdoscorreios/sro?usuario={correios_user}&senha={correios_pass}&codigo={order_number}"
+    correios_user = os.getenv("CORREIOS_USER")
+    correios_pass = os.getenv("CORREIOS_PASS")
+    if not correios_user or not correios_pass:
+        print("[Correios] Usuário ou senha não configurados.")
+        return None
 
+    try:
+        url = f"https://api.linkdoscorreios/sro?usuario={correios_user}&senha={correios_pass}&codigo={order_number}"
         response = requests.get(url, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
-        tracking_data = response.json()
+
+        try:
+            tracking_data = response.json()
+        except Exception as e:
+            print(f"[Correios] Erro ao ler JSON: {e}")
+            return None
 
         if tracking_data:
             return parse_tracking_response(order_number, tracking_data.get("eventos", [{}])[-1], "Correios")
+
     except Exception as e:
-        print(f"[Correios] Erro: {e}")
+        print(f"[Correios] Erro na API: {e}")
     return None
 
 def fetch_rodonaves_tracking(order_number):
     """Busca o rastreamento na Rodonaves."""
-    try:
-        token = os.getenv("RODONAVES_TOKEN")
-        url = "https://tracking-apigateway.rte.com.br/api/v1/tracking"
+    token = os.getenv("RODONAVES_TOKEN")
+    if not token:
+        print("[Rodonaves] Token não configurado.")
+        return None
 
+    try:
+        url = "https://tracking-apigateway.rte.com.br/api/v1/tracking"
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
@@ -70,12 +91,18 @@ def fetch_rodonaves_tracking(order_number):
 
         response = requests.post(url, json=payload, headers=headers, timeout=DEFAULT_TIMEOUT)
         response.raise_for_status()
-        tracking_data = response.json()
+
+        try:
+            tracking_data = response.json()
+        except Exception as e:
+            print(f"[Rodonaves] Erro ao ler JSON: {e}")
+            return None
 
         if tracking_data and tracking_data.get("tracking"):
             return parse_tracking_response(order_number, tracking_data["tracking"][-1], "Rodonaves")
+
     except Exception as e:
-        print(f"[Rodonaves] Erro: {e}")
+        print(f"[Rodonaves] Erro na API: {e}")
     return None
 
 # --- Funções Auxiliares ---
@@ -109,17 +136,16 @@ def generate_unknown_order(identifier):
 def get_order_status(identifier):
     """
     Obtém o status do pedido a partir do CPF/CNPJ informado.
-    Garante que sempre haverá uma resposta.
+    Garante que sempre haverá uma resposta, mesmo que as APIs reais falhem.
     """
     identifier = ''.join(filter(str.isdigit, identifier))
-
     order_number = MOCK_CPF_TO_ORDER.get(identifier)
 
-    if order_number:
-        return fetch_order(order_number)
-    else:
+    if not order_number:
         print(f"CPF/CNPJ {identifier} não encontrado no mock.")
         return generate_unknown_order(identifier)
+
+    return fetch_order(order_number)
 
 def fetch_order(order_number):
     """
