@@ -48,15 +48,18 @@ def webhook():
         return str(resp)
 
     if step == "awaiting_cpf":
-        cpf_cnpj = re.sub(r'\D', '', incoming_msg)
+        cpf_cnpj = re.sub(r'\D', '', incoming_msg)  # Remove tudo que não é número
 
-        if len(cpf_cnpj) not in [11, 14]:
-            resp.message("Número inválido! ❌ Envie apenas o CPF (11 dígitos) ou CNPJ (14 dígitos). 📄")
+        if not cpf_cnpj.isdigit() or len(cpf_cnpj) not in [11, 14]:
+            resp.message(
+                "Número inválido! ❌ Por favor, envie apenas o *CPF* (11 dígitos) ou *CNPJ* (14 dígitos), sem pontos, traços ou espaços. 📄"
+            )
             return str(resp)
 
         session["cpf_cnpj"] = cpf_cnpj
         session["step"] = "awaiting_department"
         user_sessions[user_number] = session
+
         resp.message(
             "✅ Documento recebido!\n\n"
             "Escolha o departamento:\n"
@@ -111,6 +114,6 @@ def webhook():
             resp.message("Opção inválida! ❌ Responda apenas com 1, 2 ou 3. 🔢")
             return str(resp)
 
-    # Se cair fora do fluxo
+    # Se não entender o que o usuário mandou
     resp.message("Não entendi sua mensagem. Por favor, envie *Oi* para começarmos! 👋")
     return str(resp)
