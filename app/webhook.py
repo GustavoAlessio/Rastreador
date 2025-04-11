@@ -29,7 +29,7 @@ def webhook():
     if incoming_msg.lower() in GENERIC_MESSAGES:
         user_sessions[user_number] = {"step": "awaiting_name"}
         resp.message(
-            "Olá! 👋 Seja bem-vindo ao *Grupo Aqueceletric*"
+            "Olá! 👋 Seja bem-vindo ao *Grupo Aqueceletric*\n"
             "Eu sou seu assistente virtual. 🤖\n\n"
             "Qual é o seu nome? 😊"
         )
